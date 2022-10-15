@@ -6,7 +6,7 @@
 #include <stdarg.h>
 
 #ifdef DEBUG
-void debug_print(int level, const char *format, ...)
+void debug_printf(int level, const char *format, ...)
 {
 	va_list va;
 	va_start(va, format);
@@ -14,7 +14,7 @@ void debug_print(int level, const char *format, ...)
 	va_end(va);
 }
 #else
-void debug_print(int level, const char *format, ...)
+void debug_printf(int level, const char *format, ...)
 {
 	va_list va;
 	va_start(va, format);
