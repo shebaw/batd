@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <linux/limits.h>
 #include "debug.h"
 #include "bat.h"
 
@@ -49,7 +50,7 @@ static void get_charge_behaviour_path(const struct threshold_ctx *t, char *path,
 
 static int get_charging_state(const struct threshold_ctx *t, bool *is_disabled)
 {
-	char path[200];
+	char path[PATH_MAX];
 	char state[20];
 	ssize_t n;
 
@@ -70,7 +71,7 @@ static int get_charging_state(const struct threshold_ctx *t, bool *is_disabled)
 
 static int set_charging_state(const struct threshold_ctx *t, const char *arg)
 {
-	char path[200];
+	char path[PATH_MAX];
 	get_charge_behaviour_path(t, path, sizeof(path));
 	return nwrite(path, arg, strlen(arg) + 1) == -1 ? -1 : 0;
 }
@@ -87,7 +88,7 @@ static int enable_charging(const struct threshold_ctx *arg)
 
 static int get_current_charge(const struct threshold_ctx *arg)
 {
-	char path[200];
+	char path[PATH_MAX];
 	char s[10];
 	strncpy(path, arg->smc_path, sizeof(path));
 	strcat(path, "/capacity");
