@@ -1,7 +1,6 @@
 add_executable(${PROJECT_NAME}
 	bat.c
 	#conf.c
-	daemonize.c
 	debug.c
 	main.c
 )
