@@ -1,11 +1,13 @@
-#include <stdbool.h>
-#include <unistd.h>
 #include <fcntl.h>
+#include <linux/limits.h>
+#include <signal.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <linux/limits.h>
+#include <unistd.h>
 #include "debug.h"
-#include "bat.h"
+#include "conf.h"
+#include "batd.h"
 
 static ssize_t nread(const char *path, char *buf, size_t n)
 {
@@ -29,7 +31,7 @@ static ssize_t nwrite(const char *path, const void *buf, size_t n)
 	int fd;
 	ssize_t written;
 	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC,
-	   S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+		  S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 	if (fd == -1) {
 		debug_printf(LOG_ERR, "open failed on: %s\n", path);
 		return -1;
@@ -42,13 +44,14 @@ static ssize_t nwrite(const char *path, const void *buf, size_t n)
 	return written;
 }
 
-static void get_charge_behaviour_path(const struct threshold_ctx *t, char *path, size_t n)
+static void get_charge_behaviour_path(const struct batd_conf *t, char *path,
+				      size_t n)
 {
 	strncpy(path, t->smc_path, n);
 	strcat(path, "/charge_behaviour");
 }
 
-static int get_charging_state(const struct threshold_ctx *t, bool *is_disabled)
+static int get_charging_state(const struct batd_conf *t, bool *is_enabled)
 {
 	char path[PATH_MAX];
 	char state[20];
@@ -60,33 +63,33 @@ static int get_charging_state(const struct threshold_ctx *t, bool *is_disabled)
 		return -1;
 	}
 	if (strstr(state, "auto") != NULL) {
-		*is_disabled = false;
+		*is_enabled = true;
 	} else if (strstr(state, "inhibit-charge") != NULL) {
-		*is_disabled = true;
+		*is_enabled = false;
 	} else {
 		return -1;
 	}
 	return 0;
 }
 
-static int set_charging_state(const struct threshold_ctx *t, const char *arg)
+static int set_charging_state(const struct batd_conf *t, const char *arg)
 {
 	char path[PATH_MAX];
 	get_charge_behaviour_path(t, path, sizeof(path));
 	return nwrite(path, arg, strlen(arg) + 1) == -1 ? -1 : 0;
 }
 
-static int disable_charging(const struct threshold_ctx *arg)
+static int disable_charging(const struct batd_conf *arg)
 {
 	return set_charging_state(arg, "inhibit-charge\n");
 }
 
-static int enable_charging(const struct threshold_ctx *arg)
+static int enable_charging(const struct batd_conf *arg)
 {
 	return set_charging_state(arg, "auto\n");
 }
 
-static int get_current_charge(const struct threshold_ctx *arg)
+static int get_current_charge(const struct batd_conf *arg)
 {
 	char path[PATH_MAX];
 	char s[10];
@@ -98,22 +101,72 @@ static int get_current_charge(const struct threshold_ctx *arg)
 	return atoi(s);
 }
 
-void threshold_loop(const struct threshold_ctx *ctx)
+// exit gracefully
+static void sigterm_handler(int sig)
 {
-	bool is_charging_disabled = false;
-	get_charging_state(ctx, &is_charging_disabled);
-	debug_printf(LOG_INFO, "default charging state: %s\n", is_charging_disabled ? "disabled" : "enabled");
-	for (;; sleep(ctx->nwait)) {
-		int charge = get_current_charge(ctx);
-		if (charge >= ctx->charge_limit) {
-			if (!is_charging_disabled && disable_charging(ctx) == 0) {
-				is_charging_disabled = true;
-				debug_printf(LOG_INFO, "charging disabled at %d: capacity\n", charge);
+	_exit(0);
+}
+
+volatile sig_atomic_t g_reload_config = true;
+
+// reload our configuration
+static void sighup_handler(int sig)
+{
+	g_reload_config = true;
+}
+
+// will only return if it got interrupted by a signal
+static void threshold_loop_inner(const struct batd_conf *conf)
+{
+	bool is_charging_enabled = false;
+	get_charging_state(conf, &is_charging_enabled);
+	debug_printf(LOG_INFO, "default charging state: %s\n",
+		     is_charging_enabled ? "enabled" : "disabled");
+	do {
+		int charge = get_current_charge(conf);
+		if (charge >= conf->charge_limit) {
+			if (is_charging_enabled &&
+			    disable_charging(conf) == 0) {
+				is_charging_enabled = false;
+				debug_printf(
+					LOG_INFO,
+					"charging disabled at %d: capacity\n",
+					charge);
 			}
-		} else if (is_charging_disabled && enable_charging(ctx) == 0) {
+		} else if (is_charging_enabled && enable_charging(conf) == 0) {
 			// enable charging so that we can charge to the limit
-			is_charging_disabled = false;
-			debug_printf(LOG_INFO, "charging enabled at %d: capacity\n", charge);
+			is_charging_enabled = true;
+			debug_printf(LOG_INFO,
+				     "charging enabled at %d: capacity\n",
+				     charge);
 		}
-	}
+	} while (!g_reload_config && sleep(conf->nwait) == 0);
+	// reaches here if it got interrupted by a signal
+}
+
+static int threshold_loop(void)
+{
+	do {
+		struct batd_conf conf;
+		if (g_reload_config) {
+			const char *conf_path = "";
+			if (parse_conf(conf_path, &conf) != 0) {
+				debug_printf(LOG_ERR,
+					     "error parsing config file: %s\n",
+					     conf_path);
+				return -1;
+			}
+			g_reload_config = false;
+		}
+
+		threshold_loop_inner(&conf);
+	} while (true);
+	return 0;
+}
+
+int batd(void)
+{
+	signal(SIGTERM, sigterm_handler);
+	signal(SIGHUP, sighup_handler);
+	return threshold_loop();
 }

@@ -1,6 +1,6 @@
 add_executable(${PROJECT_NAME}
 	batd.c
-	#conf.c
+	conf.c
 	debug.c
 	main.c
 )
