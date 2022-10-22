@@ -133,7 +133,7 @@ static void threshold_loop_inner(const struct batd_conf *conf)
 					"charging disabled at %d: capacity\n",
 					charge);
 			}
-		} else if (is_charging_enabled && enable_charging(conf) == 0) {
+		} else if (!is_charging_enabled && enable_charging(conf) == 0) {
 			// enable charging so that we can charge to the limit
 			is_charging_enabled = true;
 			debug_printf(LOG_INFO,
