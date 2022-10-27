@@ -15,13 +15,13 @@ static ssize_t nread(const char *path, char *buf, size_t n)
 	ssize_t nread;
 	fd = open(path, O_RDONLY);
 	if (fd == -1) {
-		debug_printf(LOG_ERR, "open failed on: %s\n", path);
+		debug_printf("open failed on: %s\n", path);
 		return -1;
 	}
 	nread = read(fd, buf, n);
 	close(fd);
 	if (nread == -1) {
-		debug_printf(LOG_ERR, "read failed on: %s\n", path);
+		debug_printf("read failed on: %s\n", path);
 	}
 	return nread;
 }
@@ -33,13 +33,13 @@ static ssize_t nwrite(const char *path, const void *buf, size_t n)
 	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC,
 		  S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 	if (fd == -1) {
-		debug_printf(LOG_ERR, "open failed on: %s\n", path);
+		debug_printf("open failed on: %s\n", path);
 		return -1;
 	}
 	written = write(fd, buf, n);
 	close(fd);
 	if (written == -1) {
-		debug_printf(LOG_ERR, "write failed on: %s\n", path);
+		debug_printf("write failed on: %s\n", path);
 	}
 	return written;
 }
@@ -120,7 +120,7 @@ static void threshold_loop_inner(const struct batd_conf *conf)
 {
 	bool is_charging_enabled = false;
 	get_charging_state(conf, &is_charging_enabled);
-	debug_printf(LOG_INFO, "default charging state: %s\n",
+	debug_printf("default charging state: %s\n",
 		     is_charging_enabled ? "enabled" : "disabled");
 	do {
 		int charge = get_current_charge(conf);
@@ -129,15 +129,13 @@ static void threshold_loop_inner(const struct batd_conf *conf)
 			    disable_charging(conf) == 0) {
 				is_charging_enabled = false;
 				debug_printf(
-					LOG_INFO,
 					"charging disabled at %d: capacity\n",
 					charge);
 			}
 		} else if (!is_charging_enabled && enable_charging(conf) == 0) {
 			// enable charging so that we can charge to the limit
 			is_charging_enabled = true;
-			debug_printf(LOG_INFO,
-				     "charging enabled at %d: capacity\n",
+			debug_printf("charging enabled at %d: capacity\n",
 				     charge);
 		}
 	} while (!g_reload_config && sleep(conf->nwait) == 0);
@@ -149,13 +147,18 @@ static int threshold_loop(void)
 	do {
 		struct batd_conf conf;
 		if (g_reload_config) {
-			const char *conf_path = "";
+			const char *conf_path = "batd.conf";
 			if (parse_conf(conf_path, &conf) != 0) {
-				debug_printf(LOG_ERR,
-					     "error parsing config file: %s\n",
+				debug_printf("error parsing config file: %s "
+					     "using default conf instead\n",
 					     conf_path);
-				return -1;
+				default_conf(&conf);
 			}
+			debug_printf("smc_path %s\n"
+				     "charge_limit %d\n"
+				     "nwait %d\n",
+				     conf.smc_path, conf.charge_limit,
+				     conf.nwait);
 			g_reload_config = false;
 		}
 
